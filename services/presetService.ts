@@ -37,6 +37,17 @@ const splitBaseAndSuffix = (name: string) => {
   return { base: trimmed, suffix: null as number | null };
 };
 
+const dedupePresetsByName = (presets: UserPreset[]) => {
+  const nameSet = new Set(presets.map((p) => String(p?.name ?? "").trim()));
+  return presets.filter((p) => {
+    const name = String(p?.name ?? "").trim();
+    if (!name) return false;
+    const { base, suffix } = splitBaseAndSuffix(name);
+    if (suffix !== null && base && nameSet.has(base)) return false;
+    return true;
+  });
+};
+
 const nextUniqueName = (desiredName: string, existingNames: Set<string>) => {
   const desired = desiredName.trim();
   if (!existingNames.has(desired)) return desired;
@@ -79,10 +90,10 @@ const sortPresets = (presets: UserPreset[]) => {
 export const listUserPresets = async (): Promise<UserPreset[]> => {
   try {
     const data = await safeFetchJson<PresetsFile>(`/api/presets?cb=${Date.now()}`, { method: "GET" });
-    return sortPresets(data.presets ?? []);
+    return sortPresets(dedupePresetsByName(data.presets ?? []));
   } catch {
     const local = readLocalPresetsFile();
-    return sortPresets(local.presets ?? []);
+    return sortPresets(dedupePresetsByName(local.presets ?? []));
   }
 };
 
