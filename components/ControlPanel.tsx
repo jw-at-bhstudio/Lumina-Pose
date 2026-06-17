@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { DEFAULT_STYLE, PoseAngles, RenderStyle, UserPreset } from '../types';
 import { deleteUserPreset, listUserPresets, upsertUserPreset } from '../services/presetService';
 import { generateSmartPoseV1, generateSmartPoseV2, generateRandomPose, generateRandomStyle } from '../utils/math';
+import { renderPresetPreviewDataUrl } from './CanvasRenderer';
 
 interface ControlPanelProps {
   angles: PoseAngles;
@@ -171,6 +172,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
   const [presetName, setPresetName] = useState('假寐');
   const [presetContributor, setPresetContributor] = useState('');
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
   const [isPresetSaving, setIsPresetSaving] = useState(false);
   const [presetError, setPresetError] = useState<string | null>(null);
   const [isCanvasSettingsOpen, setIsCanvasSettingsOpen] = useState(false);
@@ -300,6 +302,27 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
   const pageIndex = Math.min(presetPage, pageCount - 1);
   const pageStart = pageIndex * pageSize;
   const pageItems = filteredPresets.slice(pageStart, pageStart + pageSize);
+
+  useEffect(() => {
+    let cancelled = false;
+    const next: Record<string, string> = {};
+    for (const p of pageItems) {
+      if (p.previewDataUrl) continue;
+      if (generatedPreviews[p.name]) continue;
+      try {
+        const url = renderPresetPreviewDataUrl({ angles: p.angles, styleConfig: p.styleConfig, width: 320 });
+        if (url) next[p.name] = url;
+      } catch {
+      }
+    }
+    const keys = Object.keys(next);
+    if (keys.length === 0) return;
+    if (cancelled) return;
+    setGeneratedPreviews((prev) => ({ ...prev, ...next }));
+    return () => {
+      cancelled = true;
+    };
+  }, [pageItems.map((p) => `${p.name}:${p.previewDataUrl ? 1 : 0}`).join('|')]);
 
   return (
     <div className="absolute top-0 right-0 h-full w-96 bg-neutral-900 border-l border-neutral-800 p-6 overflow-y-auto text-sm transition-transform duration-300 shadow-2xl">
@@ -518,8 +541,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
             {pageItems.map((p) => (
               <div key={p.name} className="flex gap-3 items-center bg-black rounded-xl border border-neutral-800 p-3">
                 <div className="w-16 h-16 bg-neutral-950 rounded overflow-hidden border border-neutral-800 flex items-center justify-center shrink-0">
-                  {p.previewDataUrl ? (
-                    <img src={p.previewDataUrl} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
+                  {(p.previewDataUrl || generatedPreviews[p.name]) ? (
+                    <img src={p.previewDataUrl || generatedPreviews[p.name]} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
                   ) : (
                     <div className="text-[10px] text-neutral-600">{t.noPreview}</div>
                   )}

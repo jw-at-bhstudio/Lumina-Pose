@@ -12,6 +12,54 @@ export interface CanvasRendererHandle {
   renderToDataUrl: (input?: { width?: number; styleOverride?: Partial<RenderStyle> }) => string | null;
 }
 
+export const renderPresetPreviewDataUrl = (input: {
+  angles: PoseAngles;
+  styleConfig: RenderStyle;
+  width?: number;
+  styleOverride?: Partial<RenderStyle>;
+}): string | null => {
+  const width = input.width ?? 320;
+  const effectiveStyle: RenderStyle = { ...input.styleConfig, ...(input.styleOverride ?? {}) };
+  const exportWidth = width;
+  const exportHeight = Math.floor(exportWidth * (effectiveStyle.aspectHeight / effectiveStyle.aspectWidth));
+
+  const offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = exportWidth;
+  offscreenCanvas.height = exportHeight;
+  const ctx = offscreenCanvas.getContext('2d');
+  if (!ctx) return null;
+
+  const figureCanvas = document.createElement('canvas');
+  figureCanvas.width = exportWidth;
+  figureCanvas.height = exportHeight;
+  const fctx = figureCanvas.getContext('2d');
+  if (!fctx) return null;
+
+  renderFigure(fctx, exportWidth, exportHeight, input.angles, effectiveStyle);
+
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, exportWidth, exportHeight);
+
+  if (effectiveStyle.renderMode === 'fluid') {
+    const minDim = Math.min(exportWidth, exportHeight);
+    const blurRadius = 15 * (minDim / 800);
+    const filterEl = document.getElementById('goo-blur') as any;
+    if (filterEl) {
+      filterEl.setAttribute('stdDeviation', blurRadius.toString());
+    }
+
+    ctx.filter = 'url(#goo)';
+    ctx.shadowBlur = effectiveStyle.glowIntensity * (minDim / 800);
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+  } else {
+    ctx.filter = 'none';
+  }
+  ctx.drawImage(figureCanvas, 0, 0, exportWidth, exportHeight);
+  ctx.filter = 'none';
+
+  return offscreenCanvas.toDataURL('image/png');
+};
+
 // --- NOISE ALGORITHM UTILS ---
 
 const fract = (x: number) => x - Math.floor(x);
