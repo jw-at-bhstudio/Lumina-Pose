@@ -78,7 +78,7 @@ const sortPresets = (presets: UserPreset[]) => {
 
 export const listUserPresets = async (): Promise<UserPreset[]> => {
   try {
-    const data = await safeFetchJson<PresetsFile>("/api/presets", { method: "GET" });
+    const data = await safeFetchJson<PresetsFile>(`/api/presets?cb=${Date.now()}`, { method: "GET" });
     return sortPresets(data.presets ?? []);
   } catch {
     const local = readLocalPresetsFile();
