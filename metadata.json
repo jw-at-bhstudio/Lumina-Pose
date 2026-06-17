@@ -1,0 +1,5 @@
+{
+  "name": "Lumina Pose",
+  "description": "A parametric generative art application simulating human motion with variable-width styling and atmospheric lighting, powered by Gemini AI.",
+  "requestFramePermissions": []
+}
