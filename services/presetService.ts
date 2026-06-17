@@ -42,6 +42,7 @@ const dedupePresetsByName = (presets: UserPreset[]) => {
   return presets.filter((p) => {
     const name = String(p?.name ?? "").trim();
     if (!name) return false;
+    if (name === "蓄力") return false;
     const { base, suffix } = splitBaseAndSuffix(name);
     if (suffix !== null && base && nameSet.has(base)) return false;
     return true;
@@ -114,6 +115,7 @@ export const upsertUserPreset = async (input: {
     name: String(input.name ?? "").trim(),
     contributor: String(input.contributor ?? "").trim(),
   };
+  if (!payload.contributor) throw new Error("Contributor is required");
   try {
     return await safeFetchJson<UserPreset>("/api/presets/upsert", {
       method: "POST",

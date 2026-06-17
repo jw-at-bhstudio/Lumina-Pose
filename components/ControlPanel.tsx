@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { DEFAULT_STYLE, PoseAngles, RenderStyle, UserPreset } from '../types';
-import { deleteUserPreset, listUserPresets, upsertUserPreset } from '../services/presetService';
+import { listUserPresets, upsertUserPreset } from '../services/presetService';
 import { generateSmartPoseV1, generateSmartPoseV2, generateRandomPose, generateRandomStyle } from '../utils/math';
 import { renderPresetPreviewDataUrl } from './CanvasRenderer';
 
@@ -47,8 +47,8 @@ const STRINGS = {
     defaultStyle: 'Default Style',
     presetLibrary: 'Preset Library',
     searchPresets: 'Search presets...',
-    presetNamePlaceholder: 'Preset name...',
-    savePresetTitle: 'Save current pose + style + mode + 2K preview',
+    presetNamePlaceholder: 'Preset name e.g. 假寐',
+    savePresetTitle: 'Save current pose + style + mode + preview',
     save: 'Save',
     load: 'Load',
     delete: 'Delete',
@@ -89,7 +89,13 @@ const STRINGS = {
     rShinScale: 'R Shin Scale',
     noPreview: 'No Preview',
     contributor: 'Contributor',
-    contributorPlaceholder: 'Contributor (optional)',
+    contributorPlaceholder: 'Contributor (required)',
+    contributorRequired: 'Contributor is required.',
+    recentPresets: 'Recent (5)',
+    viewFullLibrary: 'View full',
+    fullLibrary: 'Full Library',
+    allContributors: 'All contributors',
+    close: 'Close',
   },
   zh: {
     export2k: '2K',
@@ -122,8 +128,8 @@ const STRINGS = {
     defaultStyle: '恢复默认样式',
     presetLibrary: '预设库',
     searchPresets: '搜索预设…',
-    presetNamePlaceholder: '预设名称…',
-    savePresetTitle: '保存当前姿势 + 样式 + 模式 + 2K 预览',
+    presetNamePlaceholder: '预设名称 e.g. 假寐',
+    savePresetTitle: '保存当前姿势 + 样式 + 模式 + 预览',
     save: '保存',
     load: '加载',
     delete: '删除',
@@ -164,27 +170,41 @@ const STRINGS = {
     rShinScale: '右小腿缩放',
     noPreview: '无预览',
     contributor: '贡献者',
-    contributorPlaceholder: '贡献者（可选）',
+    contributorPlaceholder: '贡献者（必填）',
+    contributorRequired: '贡献者为必填项。',
+    recentPresets: '最近（5）',
+    viewFullLibrary: '查看完整',
+    fullLibrary: '完整预设库',
+    allContributors: '全部贡献者',
+    close: '关闭',
   },
 } as const;
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleConfig, setStyleConfig, onExport, capturePreview, language, setLanguage }) => {
   const [presetName, setPresetName] = useState('假寐');
-  const [presetContributor, setPresetContributor] = useState('');
+  const [presetContributor, setPresetContributor] = useState(() => localStorage.getItem('lumina-contributor') ?? '');
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
   const [isPresetSaving, setIsPresetSaving] = useState(false);
   const [presetError, setPresetError] = useState<string | null>(null);
   const [isCanvasSettingsOpen, setIsCanvasSettingsOpen] = useState(false);
   const [alsoExportClean, setAlsoExportClean] = useState(true);
-  const [presetQuery, setPresetQuery] = useState('');
-  const [presetPage, setPresetPage] = useState(0);
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryContributor, setLibraryContributor] = useState('');
+  const [libraryPage, setLibraryPage] = useState(0);
   const t = STRINGS[language];
-  const canDeletePresets = import.meta.env.DEV;
   const renderModeLabel = (mode?: RenderStyle['renderMode']) => {
     if (mode === 'fluid') return t.fluid;
     return t.lines;
   };
+  const contributorOptions: string[] = Array.from(
+    new Set<string>(
+      userPresets
+        .map((p) => String(p?.contributor ?? '').trim())
+        .filter((v) => Boolean(v)),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
 
   const refreshUserPresets = async () => {
     try {
@@ -201,15 +221,24 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
     refreshUserPresets();
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem('lumina-contributor', presetContributor);
+  }, [presetContributor]);
+
   const savePresetInternal = async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
+    const contributor = presetContributor.trim();
+    if (!contributor) {
+      setPresetError(t.contributorRequired);
+      return;
+    }
     setIsPresetSaving(true);
     try {
       const previewDataUrl = (await capturePreview(320)) ?? '';
       const saved = await upsertUserPreset({
         name: trimmed,
-        contributor: presetContributor.trim(),
+        contributor,
         angles,
         styleConfig,
         previewDataUrl,
@@ -236,16 +265,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
     setAngles(preset.angles);
     setStyleConfig(preset.styleConfig);
     setPresetName(preset.name);
-  };
-
-  const handleDeleteUserPreset = async (name: string) => {
-    try {
-      await deleteUserPreset(name);
-      await refreshUserPresets();
-      setPresetError(null);
-    } catch (e: any) {
-      setPresetError(e?.message ?? 'Failed to delete preset');
-    }
   };
 
   const handleAngleChange = (key: keyof PoseAngles, value: number) => {
@@ -284,29 +303,26 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
   const handleDefaultStyle = () => {
     setStyleConfig({ ...DEFAULT_STYLE });
   };
-
-  useEffect(() => {
-    setPresetPage(0);
-  }, [presetQuery]);
-
-  const pageSize = 10;
-  const query = presetQuery.trim().toLowerCase();
-  const filteredPresets = query
-    ? userPresets.filter((p) => {
-        const name = String(p?.name ?? '').toLowerCase();
-        const contributor = String(p?.contributor ?? '').toLowerCase();
-        return name.includes(query) || contributor.includes(query);
-      })
-    : userPresets;
-  const pageCount = Math.max(1, Math.ceil(filteredPresets.length / pageSize));
-  const pageIndex = Math.min(presetPage, pageCount - 1);
-  const pageStart = pageIndex * pageSize;
-  const pageItems = filteredPresets.slice(pageStart, pageStart + pageSize);
+  const recentPresets = userPresets.slice(0, 5);
+  const libraryQueryText = libraryQuery.trim().toLowerCase();
+  const libraryFiltered = userPresets.filter((p) => {
+    const contributor = String(p?.contributor ?? '').trim();
+    if (libraryContributor && contributor !== libraryContributor) return false;
+    if (!libraryQueryText) return true;
+    const name = String(p?.name ?? '').toLowerCase();
+    const c = contributor.toLowerCase();
+    return name.includes(libraryQueryText) || c.includes(libraryQueryText);
+  });
+  const libraryPageSize = 12;
+  const libraryPageCount = Math.max(1, Math.ceil(libraryFiltered.length / libraryPageSize));
+  const libraryPageIndex = Math.min(libraryPage, libraryPageCount - 1);
+  const libraryStart = libraryPageIndex * libraryPageSize;
+  const libraryItems = libraryFiltered.slice(libraryStart, libraryStart + libraryPageSize);
 
   useEffect(() => {
     let cancelled = false;
     const next: Record<string, string> = {};
-    for (const p of pageItems) {
+    for (const p of [...recentPresets, ...libraryItems]) {
       if (p.previewDataUrl) continue;
       if (generatedPreviews[p.name]) continue;
       try {
@@ -322,7 +338,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
     return () => {
       cancelled = true;
     };
-  }, [pageItems.map((p) => `${p.name}:${p.previewDataUrl ? 1 : 0}`).join('|')]);
+  }, [
+    recentPresets.map((p) => `${p.name}:${p.previewDataUrl ? 1 : 0}`).join('|'),
+    libraryItems.map((p) => `${p.name}:${p.previewDataUrl ? 1 : 0}`).join('|'),
+  ]);
 
   return (
     <div className="absolute top-0 right-0 h-full w-96 bg-neutral-900 border-l border-neutral-800 p-6 overflow-y-auto text-sm transition-transform duration-300 shadow-2xl">
@@ -466,28 +485,65 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
       </div>
 
       <div className="mb-8">
-        <h2 className="text-xs text-neutral-500 uppercase mb-3 tracking-widest">{t.presetLibrary}</h2>
-        <div className="flex gap-2 mb-3">
-          <input
-            type="text"
-            value={presetQuery}
-            onChange={(e) => setPresetQuery(e.target.value)}
-            placeholder={t.searchPresets}
-            className="flex-1 bg-neutral-800 border-none rounded-md px-3 py-2 text-white text-xs focus:ring-1 focus:ring-white outline-none"
-          />
-          <div className="shrink-0 flex items-center text-[10px] text-neutral-500 px-2">
-            {filteredPresets.length}
-          </div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs text-neutral-500 uppercase tracking-widest">{t.presetLibrary}</h2>
+          <button
+            onClick={() => {
+              setIsLibraryOpen(true);
+              setLibraryPage(0);
+            }}
+            className="bg-neutral-800 text-neutral-200 text-[10px] px-2 py-1 rounded hover:bg-neutral-700 transition"
+          >
+            {t.viewFullLibrary}
+          </button>
         </div>
 
-        <div className="flex gap-2 mb-3">
+        <div className="text-[10px] text-neutral-500 mb-2">{t.recentPresets}</div>
+        {recentPresets.length === 0 ? (
+          <div className="text-xs text-neutral-500">{t.noPresets}</div>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {recentPresets.map((p) => (
+              <button
+                key={p.name}
+                onClick={() => handleLoadUserPreset(p)}
+                className="w-full flex items-center gap-3 bg-black rounded-xl border border-neutral-800 p-3 hover:border-neutral-700 transition text-left"
+              >
+                <div className="w-12 h-12 bg-neutral-950 rounded overflow-hidden border border-neutral-800 flex items-center justify-center shrink-0">
+                  {(p.previewDataUrl || generatedPreviews[p.name]) ? (
+                    <img src={p.previewDataUrl || generatedPreviews[p.name]} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-[10px] text-neutral-600">{t.noPreview}</div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-white truncate">{p.name}</div>
+                  <div className="text-[10px] text-neutral-600 truncate">
+                    {p.contributor ? `${t.contributor}: ${p.contributor}` : ''}
+                  </div>
+                </div>
+                <div className="shrink-0 text-[10px] text-neutral-500">
+                  {renderModeLabel(p.styleConfig.renderMode)}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 mb-2">
           <input
             type="text"
             value={presetContributor}
             onChange={(e) => setPresetContributor(e.target.value)}
             placeholder={t.contributorPlaceholder}
-            className="flex-1 bg-neutral-800 border-none rounded-md px-3 py-2 text-white text-xs focus:ring-1 focus:ring-white outline-none"
+            list="lumina-contributor-options"
+            className="flex-1 bg-neutral-800 border-none rounded-md px-3 py-2 text-white text-xs placeholder:text-neutral-500 focus:ring-1 focus:ring-white outline-none"
           />
+          <datalist id="lumina-contributor-options">
+            {contributorOptions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </div>
 
         <div className="flex gap-2 mb-3">
@@ -496,11 +552,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
             value={presetName}
             onChange={(e) => setPresetName(e.target.value)}
             placeholder={t.presetNamePlaceholder}
-            className="flex-1 bg-neutral-800 border-none rounded-md px-3 py-2 text-white text-xs focus:ring-1 focus:ring-white outline-none"
+            className="flex-1 bg-neutral-800 border-none rounded-md px-3 py-2 text-white text-xs placeholder:text-neutral-500 focus:ring-1 focus:ring-white outline-none"
           />
           <button
             onClick={handleSavePreset}
-            disabled={isPresetSaving}
+            disabled={isPresetSaving || !presetName.trim() || !presetContributor.trim()}
             className="bg-neutral-700 hover:bg-neutral-600 disabled:opacity-60 text-white px-3 py-2 rounded-md text-xs whitespace-nowrap"
             title={t.savePresetTitle}
           >
@@ -511,74 +567,105 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
         {presetError && (
           <div className="text-xs text-red-400 mb-3 break-words">{presetError}</div>
         )}
+      </div>
 
-        {filteredPresets.length === 0 ? (
-          <div className="text-xs text-neutral-500">{userPresets.length === 0 ? t.noPresets : t.noMatches}</div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[10px] text-neutral-500">
+      {isLibraryOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-[min(900px,calc(100vw-2rem))] h-[min(780px,calc(100vh-2rem))] bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col">
+            <div className="p-5 border-b border-neutral-800 flex items-center justify-between">
+              <div className="text-sm text-white">{t.fullLibrary}</div>
+              <button
+                onClick={() => setIsLibraryOpen(false)}
+                className="bg-neutral-800 text-neutral-200 text-[10px] px-2 py-1 rounded hover:bg-neutral-700 transition"
+              >
+                {t.close}
+              </button>
+            </div>
+
+            <div className="p-5 flex gap-2 items-center">
+              <input
+                type="text"
+                value={libraryQuery}
+                onChange={(e) => {
+                  setLibraryQuery(e.target.value);
+                  setLibraryPage(0);
+                }}
+                placeholder={t.searchPresets}
+                className="flex-1 bg-neutral-900 border border-neutral-800 rounded-md px-3 py-2 text-white text-xs placeholder:text-neutral-500 focus:ring-1 focus:ring-white outline-none"
+              />
+              <select
+                value={libraryContributor}
+                onChange={(e) => {
+                  setLibraryContributor(e.target.value);
+                  setLibraryPage(0);
+                }}
+                className="bg-neutral-900 text-white text-xs rounded-md px-2 py-2 border border-neutral-800 outline-none"
+              >
+                <option value="">{t.allContributors}</option>
+                {contributorOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div className="shrink-0 flex items-center text-[10px] text-neutral-500 px-2">
+                {libraryFiltered.length}
+              </div>
+            </div>
+
+            <div className="px-5 pb-5 flex-1 overflow-auto">
+              {libraryFiltered.length === 0 ? (
+                <div className="text-xs text-neutral-500">{t.noMatches}</div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {libraryItems.map((p) => (
+                    <button
+                      key={p.name}
+                      onClick={() => {
+                        handleLoadUserPreset(p);
+                        setIsLibraryOpen(false);
+                      }}
+                      className="bg-black border border-neutral-800 rounded-xl p-3 hover:border-neutral-700 transition text-left"
+                    >
+                      <div className="w-full aspect-square bg-neutral-950 rounded-lg overflow-hidden border border-neutral-800 flex items-center justify-center mb-2">
+                        {(p.previewDataUrl || generatedPreviews[p.name]) ? (
+                          <img src={p.previewDataUrl || generatedPreviews[p.name]} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="text-[10px] text-neutral-600">{t.noPreview}</div>
+                        )}
+                      </div>
+                      <div className="text-xs text-white truncate">{p.name}</div>
+                      <div className="text-[10px] text-neutral-600 truncate">
+                        {p.contributor ? `${t.contributor}: ${p.contributor}` : ''}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-neutral-500">
               <div>
-                {pageStart + 1}-{Math.min(pageStart + pageItems.length, filteredPresets.length)} / {filteredPresets.length}
+                {libraryStart + 1}-{Math.min(libraryStart + libraryItems.length, libraryFiltered.length)} / {libraryFiltered.length}
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setPresetPage(Math.max(0, pageIndex - 1))}
-                  disabled={pageIndex === 0}
-                  className="bg-neutral-800 disabled:opacity-60 text-neutral-300 px-2 py-1 rounded"
+                  onClick={() => setLibraryPage(Math.max(0, libraryPageIndex - 1))}
+                  disabled={libraryPageIndex === 0}
+                  className="bg-neutral-800 disabled:opacity-60 text-neutral-200 px-2 py-1 rounded"
                 >
                   {t.prev}
                 </button>
                 <button
-                  onClick={() => setPresetPage(Math.min(pageCount - 1, pageIndex + 1))}
-                  disabled={pageIndex >= pageCount - 1}
-                  className="bg-neutral-800 disabled:opacity-60 text-neutral-300 px-2 py-1 rounded"
+                  onClick={() => setLibraryPage(Math.min(libraryPageCount - 1, libraryPageIndex + 1))}
+                  disabled={libraryPageIndex >= libraryPageCount - 1}
+                  className="bg-neutral-800 disabled:opacity-60 text-neutral-200 px-2 py-1 rounded"
                 >
                   {t.next}
                 </button>
               </div>
             </div>
-
-            {pageItems.map((p) => (
-              <div key={p.name} className="flex gap-3 items-center bg-black rounded-xl border border-neutral-800 p-3">
-                <div className="w-16 h-16 bg-neutral-950 rounded overflow-hidden border border-neutral-800 flex items-center justify-center shrink-0">
-                  {(p.previewDataUrl || generatedPreviews[p.name]) ? (
-                    <img src={p.previewDataUrl || generatedPreviews[p.name]} alt={p.name} loading="lazy" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="text-[10px] text-neutral-600">{t.noPreview}</div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-white truncate">{p.name}</div>
-                  <div className="text-[10px] text-neutral-500 truncate">
-                    {t.mode}: {renderModeLabel(p.styleConfig.renderMode)}
-                  </div>
-                  {p.contributor && (
-                    <div className="text-[10px] text-neutral-600 truncate">
-                      {t.contributor}: {p.contributor}
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleLoadUserPreset(p)}
-                    className="bg-white text-black text-xs px-3 py-2 rounded hover:bg-neutral-200 transition whitespace-nowrap"
-                  >
-                    {t.load}
-                  </button>
-                  {canDeletePresets && (
-                    <button
-                      onClick={() => handleDeleteUserPreset(p.name)}
-                      className="bg-neutral-800 text-neutral-300 text-xs px-3 py-2 rounded hover:bg-neutral-700 transition whitespace-nowrap"
-                    >
-                      {t.delete}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Style */}
       <div className="mb-8 space-y-5">

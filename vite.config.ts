@@ -73,6 +73,8 @@ export default defineConfig(({ mode }) => {
                   const contributorFilter = String(urlObj.searchParams.get('contributor') ?? '').trim().toLowerCase();
                   const q = String(urlObj.searchParams.get('q') ?? '').trim().toLowerCase();
                   const presets = (file.presets ?? []).filter((p: any) => {
+                    const rawName = String(p?.name ?? '').trim();
+                    if (rawName === '蓄力') return false;
                     const name = String(p?.name ?? '').toLowerCase();
                     const contributor = String(p?.contributor ?? '').toLowerCase();
                     if (contributorFilter && contributor !== contributorFilter) return false;
@@ -105,6 +107,12 @@ export default defineConfig(({ mode }) => {
                   const file = await readPresetsFile();
                   const now = Date.now();
                   const contributor = String(input.contributor ?? '').trim();
+                  if (!contributor) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify({ error: 'contributor is required' }));
+                    return;
+                  }
                   const existingNames = new Set((file.presets ?? []).map((p: any) => String(p?.name ?? '')));
                   const uniqueName = nextUniqueName(name, existingNames);
                   const preset = {
@@ -208,6 +216,8 @@ export default defineConfig(({ mode }) => {
                   const contributorFilter = String(urlObj.searchParams.get('contributor') ?? '').trim().toLowerCase();
                   const q = String(urlObj.searchParams.get('q') ?? '').trim().toLowerCase();
                   const presets = (file.presets ?? []).filter((p: any) => {
+                    const rawName = String(p?.name ?? '').trim();
+                    if (rawName === '蓄力') return false;
                     const name = String(p?.name ?? '').toLowerCase();
                     const contributor = String(p?.contributor ?? '').toLowerCase();
                     if (contributorFilter && contributor !== contributorFilter) return false;
@@ -240,6 +250,12 @@ export default defineConfig(({ mode }) => {
                   const file = await readPresetsFile();
                   const now = Date.now();
                   const contributor = String(input.contributor ?? '').trim();
+                  if (!contributor) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify({ error: 'contributor is required' }));
+                    return;
+                  }
                   const existingNames = new Set((file.presets ?? []).map((p: any) => String(p?.name ?? '')));
                   const uniqueName = nextUniqueName(name, existingNames);
                   const preset = {

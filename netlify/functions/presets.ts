@@ -236,6 +236,7 @@ export const handler = async (event: any) => {
       for (const p of byContent.values()) deduped.push(p);
 
       const filtered = deduped
+        .filter((p) => String(p?.name ?? "").trim() !== "蓄力")
         .filter((p) => {
           const contributor = String(p?.contributor ?? "").toLowerCase();
           if (contributorFilter && contributor !== contributorFilter) return false;
@@ -251,9 +252,11 @@ export const handler = async (event: any) => {
     if (method === "POST" && subPath === "upsert") {
       const rawBody = String(event?.body ?? "");
       const parsed = rawBody ? (JSON.parse(rawBody) as any) : {};
+      const contributor = String(parsed?.contributor ?? "").trim();
+      if (!contributor) return json(400, { error: "contributor is required" });
       const preset = await createUniquePreset({
         name: String(parsed?.name ?? ""),
-        contributor: String(parsed?.contributor ?? ""),
+        contributor,
         angles: parsed?.angles ?? {},
         styleConfig: parsed?.styleConfig ?? {},
         previewDataUrl: String(parsed?.previewDataUrl ?? ""),
