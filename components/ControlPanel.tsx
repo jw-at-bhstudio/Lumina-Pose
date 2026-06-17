@@ -557,7 +557,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
           <button
             onClick={handleSavePreset}
             disabled={isPresetSaving || !presetName.trim() || !presetContributor.trim()}
-            className="bg-neutral-700 hover:bg-neutral-600 disabled:opacity-60 text-white px-3 py-2 rounded-md text-xs whitespace-nowrap"
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-3 py-2 rounded-md text-xs whitespace-nowrap"
             title={t.savePresetTitle}
           >
             {isPresetSaving ? '...' : t.save}
