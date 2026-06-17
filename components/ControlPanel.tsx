@@ -181,7 +181,7 @@ const STRINGS = {
 } as const;
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleConfig, setStyleConfig, onExport, capturePreview, language, setLanguage }) => {
-  const [presetName, setPresetName] = useState('假寐');
+  const [presetName, setPresetName] = useState('');
   const [presetContributor, setPresetContributor] = useState(() => localStorage.getItem('lumina-contributor') ?? '');
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   const [generatedPreviews, setGeneratedPreviews] = useState<Record<string, string>>({});
