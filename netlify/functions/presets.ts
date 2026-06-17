@@ -44,7 +44,16 @@ const deriveSubPath = (path: string) => {
 };
 
 const getPresetsStore = () => {
-  return getStore({ name: "lumina-pose-presets", consistency: "strong" as any });
+  return getStore("lumina-pose-presets");
+};
+
+const safeParseJson = <T>(raw: string | null): T | null => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
 };
 
 const listAllPresets = async (): Promise<Preset[]> => {
@@ -53,8 +62,8 @@ const listAllPresets = async (): Promise<Preset[]> => {
   const items = await Promise.all(
     (blobs ?? []).map(async (b: any) => {
       const key = String(b?.key ?? "");
-      const value = await store.get(key, { type: "json" as any });
-      return value as Preset | null;
+      const raw = (await store.get(key)) as unknown as string | null;
+      return safeParseJson<Preset>(raw);
     }),
   );
   return items.filter((p): p is Preset => Boolean(p && typeof p.name === "string"));
@@ -176,4 +185,3 @@ export const handler = async (event: any) => {
     return json(500, { error: message });
   }
 };
-

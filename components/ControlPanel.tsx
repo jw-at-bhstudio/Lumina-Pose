@@ -212,6 +212,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
         styleConfig,
         previewDataUrl,
       });
+      setUserPresets((prev) => {
+        const without = prev.filter((p) => p.name !== saved.name);
+        return [saved, ...without];
+      });
       await refreshUserPresets();
       setPresetName(saved?.name ?? trimmed);
       setPresetError(null);
