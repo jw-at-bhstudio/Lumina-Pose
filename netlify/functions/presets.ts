@@ -1,4 +1,5 @@
 import { connectLambda, getStore } from "@netlify/blobs";
+import { createHash } from "node:crypto";
 
 type Preset = {
   name: string;
@@ -34,6 +35,23 @@ const splitBaseAndSuffix = (name: string) => {
   if (m) return { base: String(m[1] ?? "").trim(), suffix: Number(m[2]) };
   return { base: trimmed, suffix: null as number | null };
 };
+
+const stableStringify = (value: any): string => {
+  if (value === null) return "null";
+  const t = typeof value;
+  if (t === "string") return JSON.stringify(value);
+  if (t === "number" || t === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v)).join(",")}]`;
+  if (t === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(String(value));
+};
+
+const hashText = (text: string) => createHash("sha256").update(text).digest("hex");
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const deriveSubPath = (path: string) => {
   const p = String(path ?? "");
@@ -71,6 +89,24 @@ const listAllPresets = async (): Promise<Preset[]> => {
 
 const toKey = (name: string) => `presets/${encodeURIComponent(name)}.json`;
 
+const dedupeKeyForInput = (input: { name: string; contributor?: string; angles: any; styleConfig: any }) => {
+  const payload = {
+    name: String(input.name ?? "").trim(),
+    contributor: String(input.contributor ?? "").trim(),
+    angles: input.angles ?? {},
+    styleConfig: input.styleConfig ?? {},
+  };
+  return `dedupe/${hashText(stableStringify(payload))}.txt`;
+};
+
+const readPresetByName = async (name: string): Promise<Preset | null> => {
+  const store = getPresetsStore();
+  const raw = (await store.get(toKey(name))) as unknown as string | null;
+  const parsed = safeParseJson<Preset>(raw);
+  if (!parsed || typeof parsed.name !== "string") return null;
+  return parsed;
+};
+
 const createUniquePreset = async (input: {
   name: string;
   contributor?: string;
@@ -88,6 +124,24 @@ const createUniquePreset = async (input: {
   if (!safeBase) throw new Error("name is required");
 
   const store = getPresetsStore();
+
+  const dedupeKey = dedupeKeyForInput({
+    name: desiredName,
+    contributor,
+    angles: input.angles ?? {},
+    styleConfig: input.styleConfig ?? {},
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const lock = await store.set(dedupeKey, "LOCK", { onlyIfNew: true });
+    if (lock?.modified) break;
+    const existingName = String((await store.get(dedupeKey)) ?? "").trim();
+    if (existingName && existingName !== "LOCK") {
+      const existingPreset = await readPresetByName(existingName);
+      if (existingPreset) return existingPreset;
+    }
+    await sleep(200 + attempt * 250);
+  }
 
   const tryCreate = async (candidateName: string) => {
     const preset: Preset = {
@@ -107,12 +161,18 @@ const createUniquePreset = async (input: {
   };
 
   const first = await tryCreate(desiredName);
-  if (first.modified) return first.preset;
+  if (first.modified) {
+    await store.set(dedupeKey, first.preset.name);
+    return first.preset;
+  }
 
   for (let i = 1; i < 10000; i += 1) {
     const candidate = `${safeBase}-${pad2(i)}`;
     const created = await tryCreate(candidate);
-    if (created.modified) return created.preset;
+    if (created.modified) {
+      await store.set(dedupeKey, created.preset.name);
+      return created.preset;
+    }
   }
 
   throw new Error("No available name");
@@ -141,7 +201,41 @@ export const handler = async (event: any) => {
       const contributorFilter = String(event?.queryStringParameters?.contributor ?? "").trim().toLowerCase();
       const q = String(event?.queryStringParameters?.q ?? "").trim().toLowerCase();
       const presets = await listAllPresets();
-      const filtered = presets
+      const deduped: Preset[] = [];
+      const byContent = new Map<string, Preset>();
+      for (const p of presets) {
+        const contentKey = hashText(
+          stableStringify({
+            contributor: String(p?.contributor ?? "").trim(),
+            angles: p?.angles ?? {},
+            styleConfig: p?.styleConfig ?? {},
+          }),
+        );
+        const prev = byContent.get(contentKey);
+        if (!prev) {
+          byContent.set(contentKey, p);
+          continue;
+        }
+        const a = splitBaseAndSuffix(String(prev?.name ?? ""));
+        const b = splitBaseAndSuffix(String(p?.name ?? ""));
+        const prevIsCanonical = a.suffix === null;
+        const nextIsCanonical = b.suffix === null;
+        if (prevIsCanonical && !nextIsCanonical) continue;
+        if (!prevIsCanonical && nextIsCanonical) {
+          byContent.set(contentKey, p);
+          continue;
+        }
+        if (a.suffix !== null && b.suffix !== null && b.suffix < a.suffix) {
+          byContent.set(contentKey, p);
+          continue;
+        }
+        if ((p.updatedAt ?? 0) > (prev.updatedAt ?? 0)) {
+          byContent.set(contentKey, p);
+        }
+      }
+      for (const p of byContent.values()) deduped.push(p);
+
+      const filtered = deduped
         .filter((p) => {
           const contributor = String(p?.contributor ?? "").toLowerCase();
           if (contributorFilter && contributor !== contributorFilter) return false;

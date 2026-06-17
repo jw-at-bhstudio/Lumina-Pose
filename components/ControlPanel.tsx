@@ -204,7 +204,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ angles, setAngles, styleCon
     if (!trimmed) return;
     setIsPresetSaving(true);
     try {
-      const previewDataUrl = (await capturePreview(2560)) ?? '';
+      const previewDataUrl = (await capturePreview(320)) ?? '';
       const saved = await upsertUserPreset({
         name: trimmed,
         contributor: presetContributor.trim(),
